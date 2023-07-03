@@ -37,6 +37,7 @@ const (
 type adminAPIHandlers struct{}
 
 // registerAdminRouter - Add handler functions for each service REST API routes.
+// 注册AdminAPI作为
 func registerAdminRouter(router *mux.Router, enableConfigOps bool) {
 	adminAPI := adminAPIHandlers{}
 	// Admin router

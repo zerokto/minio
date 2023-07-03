@@ -19,13 +19,15 @@ package bpool
 
 // BytePoolCap implements a leaky pool of []byte in the form of a bounded channel.
 type BytePoolCap struct {
-	c    chan []byte
-	w    int
-	wcap int
+	c    chan []byte // 缓冲字节切片的有限容量通道
+	w    int         // 字节切片的宽度
+	wcap int         // 每个字节切片的容量大小
 }
 
 // NewBytePoolCap creates a new BytePool bounded to the given maxSize, with new
 // byte arrays sized based on width.
+// 表示创建一个新的字节池，其中 maxSize 表示池的最大容量，
+// width 表示每个切片的宽度，capwidth 表示每个切片的容量宽度。
 func NewBytePoolCap(maxSize int, width int, capwidth int) (bp *BytePoolCap) {
 	return &BytePoolCap{
 		c:    make(chan []byte, maxSize),
@@ -37,6 +39,7 @@ func NewBytePoolCap(maxSize int, width int, capwidth int) (bp *BytePoolCap) {
 // Get gets a []byte from the BytePool, or creates a new one if none are
 // available in the pool.
 func (bp *BytePoolCap) Get() (b []byte) {
+	// 使用select避免在池中没有切片时，程序被阻塞等待
 	select {
 	case b = <-bp.c:
 	// reuse existing buffer

@@ -34,13 +34,16 @@ import (
 
 const (
 	// Minimum length for MinIO access key.
+	// MINIO 访问密钥的最小长度限制
 	accessKeyMinLen = 3
 
 	// Maximum length for MinIO access key.
 	// There is no max length enforcement for access keys
+	// MINIO 访问密钥的最长长度限制
 	accessKeyMaxLen = 20
 
 	// Minimum length for MinIO secret key for both server
+	// 密钥的长度限制
 	secretKeyMinLen = 8
 
 	// Maximum secret key length for MinIO, this
@@ -49,6 +52,7 @@ const (
 	secretKeyMaxLen = 40
 
 	// Alpha numeric table used for generating access keys.
+	// 生成密钥的字符表
 	alphaNumericTable = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 	// Total length of the alpha numeric table.

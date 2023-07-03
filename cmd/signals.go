@@ -28,6 +28,7 @@ import (
 	"github.com/minio/minio/internal/logger"
 )
 
+// 处理程序结束的信号量
 func handleSignals() {
 	// Custom exit function
 	exit := func(success bool) {

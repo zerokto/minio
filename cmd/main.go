@@ -107,9 +107,10 @@ func newApp(name string) *cli.App {
 		commands = append(commands, command)
 		commandsTree.Insert(command.Name)
 	}
-
+	// 查找相接近的命令？
 	findClosestCommands := func(command string) []string {
 		var closestCommands []string
+		// 首先再trie树中，command命令的所有子命令都添加
 		closestCommands = append(closestCommands, commandsTree.PrefixMatch(command)...)
 
 		sort.Strings(closestCommands)
@@ -121,6 +122,7 @@ func newApp(name string) *cli.App {
 			}
 			// 2 is arbitrary and represents the max
 			// allowed number of typed errors
+			// 其次计算与其相近的命令同样都添加
 			if words.DamerauLevenshteinDistance(command, value) < 2 {
 				closestCommands = append(closestCommands, value)
 			}
@@ -130,6 +132,8 @@ func newApp(name string) *cli.App {
 	}
 
 	// Register all commands.
+	// 最主要
+	// 注册本地service和网关策略命令
 	registerCommand(serverCmd)
 	registerCommand(gatewayCmd) // hidden kept for guiding users.
 
@@ -145,7 +149,7 @@ func newApp(name string) *cli.App {
 	app.Author = "MinIO, Inc."
 	app.Version = ReleaseTag
 	app.Usage = "High Performance Object Storage"
-	app.Description = `Build high performance data infrastructure for machine learning, analytics and application data workloads with MinIO`
+	app.Description = `Build high performance data in frastructure for machine learning, analytics and application data workloads with MinIO`
 	app.Flags = GlobalFlags
 	app.HideHelpCommand = true // Hide `help, h` command, we already have `minio --help`.
 	app.Commands = commands

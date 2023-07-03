@@ -70,17 +70,19 @@ func (m *bucketMeasurement) updateExponentialMovingAverage(endTime time.Time) {
 	bytesSinceLastWindow := atomic.SwapUint64(&m.bytesSinceLastWindow, 0)
 
 	if m.expMovingAvg == 0 {
+		// 第一次 直接计算
 		// Should address initial calculation and should be fine for resuming from 0
 		m.expMovingAvg = float64(bytesSinceLastWindow) / duration.Seconds()
 		return
 	}
-
+	// 非第一次
 	increment := float64(bytesSinceLastWindow) / duration.Seconds()
 	m.expMovingAvg = exponentialMovingAverage(betaBucket, m.expMovingAvg, increment)
 }
 
 // exponentialMovingAverage calculates the exponential moving average
 func exponentialMovingAverage(beta, previousAvg, incrementAvg float64) float64 {
+	// 计算方式：加权平均算法：前一个窗口的值*beta + 当前窗口的值 * (1-beta)
 	return (1-beta)*incrementAvg + beta*previousAvg
 }
 

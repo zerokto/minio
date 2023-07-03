@@ -512,28 +512,38 @@ func getServerListenAddrs() []string {
 
 // serverMain handler called for 'minio server' command.
 func serverMain(ctx *cli.Context) {
+	// 注册系统管理
 	signal.Notify(globalOSSignalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 
 	go handleSignals()
-
+	// 修改设置，分配512K -> 4K进行内存采样，关闭 mutex prof，关闭统计阻塞的event统计：
 	setDefaultProfilerRates()
 
 	// Initialize globalConsoleSys system
+	// 初始化全局console日志，并作为target加入
 	bootstrapTrace("newConsoleLogger")
 	globalConsoleSys = NewConsoleLogger(GlobalContext)
 	logger.AddSystemTarget(GlobalContext, globalConsoleSys)
 
 	// Perform any self-tests
 	bootstrapTrace("selftests")
+
+	// bitrotSelfTest 执行自检以确保 bitrot算法计算正确的校验和
+
+	// 主要就是比较文件的Hash值来判断文件是否发生错误
 	bitrotSelfTest()
+	// 确保纠删算法正确
 	erasureSelfTest()
+	// 确保压缩算法正确
 	compressSelfTest()
 
 	// Handle all server environment vars.
+	// 处理环境变量
 	bootstrapTrace("serverHandleEnvVars")
 	serverHandleEnvVars()
 
 	// Handle all server command args.
+	// 处理命令行参数
 	bootstrapTrace("serverHandleCmdArgs")
 	serverHandleCmdArgs(ctx)
 
@@ -542,6 +552,7 @@ func serverMain(ctx *cli.Context) {
 	handleKMSConfig()
 
 	// Set node name, only set for distributed setup.
+	// 设置分布式节点
 	bootstrapTrace("setNodeName")
 	globalConsoleSys.SetNodeName(globalLocalNodeName)
 
@@ -551,10 +562,12 @@ func serverMain(ctx *cli.Context) {
 
 	// Initialize all sub-systems
 	bootstrapTrace("initAllSubsystems")
+	// 设置子系统
 	initAllSubsystems(GlobalContext)
 
 	// Is distributed setup, error out if no certificates are found for HTTPS endpoints.
 	if globalIsDistErasure {
+		// 分布式节点需要有Https的鉴证
 		if globalEndpoints.HTTPS() && !globalIsTLS {
 			logger.Fatal(config.ErrNoCertsAndHTTPSEndpoints(nil), "Unable to start the server")
 		}
@@ -574,6 +587,7 @@ func serverMain(ctx *cli.Context) {
 
 	// Set system resources to maximum.
 	bootstrapTrace("setMaxResources")
+	// 设置最大的文件、进程、内存限制
 	setMaxResources()
 
 	// Verify kernel release and version.
@@ -588,6 +602,7 @@ func serverMain(ctx *cli.Context) {
 	}
 
 	// Configure server.
+	// 配置服务路由
 	bootstrapTrace("configureServerHandler")
 	handler, err := configureServerHandler(globalEndpoints)
 	if err != nil {
@@ -600,6 +615,7 @@ func serverMain(ctx *cli.Context) {
 	}
 
 	bootstrapTrace("xhttp.NewServer")
+	// 创建Http Svr
 	httpServer := xhttp.NewServer(getServerListenAddrs()).
 		UseHandler(setCriticalErrorHandler(corsHandler(handler))).
 		UseTLSConfig(newTLSConfig(getCert)).
@@ -626,6 +642,7 @@ func serverMain(ctx *cli.Context) {
 		}
 	}
 
+	// 初始化Object，默认初始化EC
 	bootstrapTrace("newObjectLayer")
 	newObject, err := newObjectLayer(GlobalContext, globalEndpoints)
 	if err != nil {
