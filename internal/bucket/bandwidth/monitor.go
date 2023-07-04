@@ -27,13 +27,14 @@ import (
 
 type throttle struct {
 	*rate.Limiter
-	NodeBandwidthPerSec int64
+	NodeBandwidthPerSec int64 // 每秒带宽
 }
 
 // Monitor holds the state of the global bucket monitor
+// 监控器，
 type Monitor struct {
-	tlock                 sync.RWMutex // mutex for bucketThrottle
-	bucketThrottle        map[string]map[string]*throttle
+	tlock                 sync.RWMutex                             // mutex for bucketThrottle
+	bucketThrottle        map[string]map[string]*throttle          // 精确到Object的节流器
 	mlock                 sync.RWMutex                             // mutex for activeBuckets map
 	activeBuckets         map[string]map[string]*bucketMeasurement // Buckets with objects in flight
 	bucketMovingAvgTicker *time.Ticker                             // Ticker for calculating moving averages
@@ -50,6 +51,7 @@ func NewMonitor(ctx context.Context, numNodes uint64) *Monitor {
 		ctx:                   ctx,
 		NodeCount:             numNodes,
 	}
+	// 定时计算
 	go m.trackEWMA()
 	return m
 }
@@ -101,6 +103,8 @@ type BucketBandwidthReport struct {
 }
 
 // GetReport gets the report for all bucket bandwidth details.
+// 获取所有存储桶和其目标的带宽使用情况报告。它使用getReport方法生成报告，
+// 并使用提供的SelectionFunction来选择要包含在报告中的存储桶。
 func (m *Monitor) GetReport(selectBucket SelectionFunction) *BucketBandwidthReport {
 	m.mlock.RLock()
 	defer m.mlock.RUnlock()
@@ -135,10 +139,12 @@ func (m *Monitor) getReport(selectBucket SelectionFunction) *BucketBandwidthRepo
 	return report
 }
 
+// EWMA 指数移动平均数算法
 func (m *Monitor) trackEWMA() {
 	for {
 		select {
 		case <-m.bucketMovingAvgTicker.C:
+			// 定时更新窗口moving average
 			m.updateMovingAvg()
 		case <-m.ctx.Done():
 			return
@@ -146,6 +152,7 @@ func (m *Monitor) trackEWMA() {
 	}
 }
 
+// 更新每个bucket的所有目标的EMA
 func (m *Monitor) updateMovingAvg() {
 	m.mlock.Lock()
 	defer m.mlock.Unlock()
@@ -156,6 +163,7 @@ func (m *Monitor) updateMovingAvg() {
 	}
 }
 
+// 获取或建立bucketMeasurement
 func (m *Monitor) getBucketMeasurement(bucket, arn string, initTime time.Time) map[string]*bucketMeasurement {
 	bucketTracker, ok := m.activeBuckets[bucket]
 	if !ok {
@@ -205,9 +213,11 @@ func (m *Monitor) throttle(bucket, arn string) *throttle {
 }
 
 // SetBandwidthLimit sets the bandwidth limit for a bucket
+// 设置存储桶和其目标的带宽限制
 func (m *Monitor) SetBandwidthLimit(bucket, arn string, limit int64) {
 	m.tlock.Lock()
 	defer m.tlock.Unlock()
+	// 限制转成每个节点的限制
 	bw := limit / int64(m.NodeCount)
 	tgtMap, ok := m.bucketThrottle[bucket]
 	if !ok {

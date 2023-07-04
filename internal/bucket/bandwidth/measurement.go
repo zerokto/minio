@@ -49,6 +49,7 @@ func (m *bucketMeasurement) incrementBytes(bytes uint64) {
 }
 
 // updateExponentialMovingAverage processes the measurements captured so far.
+// 重新计算 expMovingAvg
 func (m *bucketMeasurement) updateExponentialMovingAverage(endTime time.Time) {
 	// Calculate aggregate avg bandwidth and exp window avg
 	m.lock.Lock()

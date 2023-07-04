@@ -43,12 +43,15 @@ type MonitorReaderOptions struct {
 // Read implements a throttled read
 func (r *MonitoredReader) Read(buf []byte) (n int, err error) {
 	if r.throttle == nil {
+		// 没有限制，直接读取并返回
 		return r.r.Read(buf)
 	}
 	if r.lastErr != nil {
+		// 存在错误
 		err = r.lastErr
 		return
 	}
+	// 最大的token数目
 	b := r.throttle.Burst()  // maximum available tokens
 	need := len(buf)         // number of bytes requested by caller
 	hdr := r.opts.HeaderSize // remaining header bytes
@@ -94,6 +97,7 @@ func NewMonitoredReader(ctx context.Context, m *Monitor, r io.Reader, opts *Moni
 		opts:     opts,
 		ctx:      ctx,
 	}
+	// 创建测量工具
 	reader.m.track(opts.Bucket, opts.TargetARN)
 	return &reader
 }
