@@ -190,6 +190,7 @@ func formatGetBackendErasureVersion(b []byte) (string, error) {
 // Migrates all previous versions to latest version of `format.json`,
 // this code calls migration in sequence, such as V1 is migrated to V2
 // first before it V2 migrates to V3.n
+// 迁移之前的 MinIO 服务器版本的 format.json 配置文件到最新版本
 func formatErasureMigrate(export string) ([]byte, fs.FileInfo, error) {
 	formatPath := pathJoin(export, minioMetaBucket, formatConfigFile)
 	formatData, formatFi, err := xioutil.ReadFileWithFileInfo(formatPath)

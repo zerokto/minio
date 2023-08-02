@@ -33,19 +33,19 @@ import (
 
 // GetInfo returns total and free bytes available in a directory, e.g. `/`.
 func GetInfo(path string) (info Info, err error) {
-	s := syscall.Statfs_t{}
-	err = syscall.Statfs(path, &s)
+	s := syscall.Statfs_t{}        // 用于存储文件系统的统计信息
+	err = syscall.Statfs(path, &s) // 获取文件信息
 	if err != nil {
 		return Info{}, err
 	}
-	reservedBlocks := s.Bfree - s.Bavail
+	reservedBlocks := s.Bfree - s.Bavail // 保留块数 = 自由块数 - 可用块数
 	info = Info{
-		Total: uint64(s.Frsize) * (s.Blocks - reservedBlocks),
-		Free:  uint64(s.Frsize) * s.Bavail,
-		Files: s.Files,
-		Ffree: s.Ffree,
+		Total: uint64(s.Frsize) * (s.Blocks - reservedBlocks), // 片段大小*（总块数 - 保留块数）
+		Free:  uint64(s.Frsize) * s.Bavail,                    // 通过将片段大小乘以可用块数来计算目录中剩余可用的字节数。
+		Files: s.Files,                                        // 目录中的文件总数
+		Ffree: s.Ffree,                                        // 目录中的空闲文件节点总数
 		//nolint:unconvert
-		FSType: getFSType(int64(s.Type)),
+		FSType: getFSType(int64(s.Type)), // 获取文件系统类型
 	}
 	// Check for overflows.
 	// https://github.com/minio/minio/issues/8035
@@ -62,7 +62,7 @@ func GetInfo(path string) (info Info, err error) {
 		return Info{}, err
 	}
 	//nolint:unconvert
-	devID := uint64(st.Dev) // Needed to support multiple GOARCHs
+	devID := uint64(st.Dev) // Needed to support multiple GOARCHs 设备ID
 	info.Major = unix.Major(devID)
 	info.Minor = unix.Minor(devID)
 	return info, nil

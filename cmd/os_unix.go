@@ -31,6 +31,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// 这段代码定义了一个名为 access 的函数，用于检查指定路径的文件或目录是否可读可写。
+// 该函数使用 unix.Access 函数来检查文件或目录是否可读可写。
+// 如果该函数返回一个错误，access 函数将创建一个新的 *os.PathError 类型的错误，并将其返回。
 func access(name string) error {
 	if err := unix.Access(name, unix.R_OK|unix.W_OK); err != nil {
 		return &os.PathError{Op: "lstat", Path: name, Err: err}
@@ -48,6 +51,18 @@ func access(name string) error {
 // directories that MkdirAll creates.
 // If path is already a directory, MkdirAll does nothing
 // and returns nil.
+
+/*
+*
+这段代码定义了一个名为 osMkdirAll 的函数，用于递归创建目录及其所有父目录。
+该函数接受两个参数：path 表示要创建的目录路径，perm 表示要应用于创建的所有目录的权限位（在应用 umask 之前）。
+如果目录已经存在，则函数不执行任何操作并返回 nil。
+该函数在 Golang 的 os.MkdirAll 函数的基础上进行了修改，以便在 os.Mkdir 函数返回错误时，避免调用 os.Lstat 函数以提高性能。
+因为如果 os.Mkdir 函数返回错误，说明目录已经存在或者创建目录的权限不足，那么调用 os.Lstat 函数将不会提供更多信息。
+该函数的返回值为 nil 或一个错误。如果成功创建所有目录，则返回 nil；
+否则返回一个类型为 *os.PathError 的错误，其中 Path 字段包含创建目录时出错的路径，Op 字段表示操作类型为 mkdir，
+Err 字段表示创建目录时出现的错误。
+*/
 func osMkdirAll(dirPath string, perm os.FileMode) error {
 	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
 	err := Access(dirPath)
@@ -89,7 +104,7 @@ func osMkdirAll(dirPath string, perm os.FileMode) error {
 
 // The buffer must be at least a block long.
 // refer https://github.com/golang/go/issues/24015
-const blockSize = 8 << 10 // 8192
+const blockSize = 8 << 10 // 8192 8KB
 
 // By default atleast 128 entries in single getdents call (1MiB buffer)
 var (
@@ -112,9 +127,11 @@ var (
 // value used to represent a syscall.DT_UNKNOWN Dirent.Type.
 const unexpectedFileMode os.FileMode = os.ModeNamedPipe | os.ModeSocket | os.ModeDevice
 
+// 解析一个目录条目的信息，并返回条目的名称、权限位以及其他相关信息。
 func parseDirEnt(buf []byte) (consumed int, name []byte, typ os.FileMode, err error) {
 	// golang.org/issue/15653
 	dirent := (*syscall.Dirent)(unsafe.Pointer(&buf[0]))
+	// 检查字节数组的大小是否足够包含一个目录条目的头部信息
 	if v := unsafe.Offsetof(dirent.Reclen) + unsafe.Sizeof(dirent.Reclen); uintptr(len(buf)) < v {
 		return consumed, nil, typ, fmt.Errorf("buf size of %d smaller than dirent header size %d", len(buf), v)
 	}
@@ -151,6 +168,7 @@ func parseDirEnt(buf []byte) (consumed int, name []byte, typ os.FileMode, err er
 // readDirFn applies the fn() function on each entries at dirPath, doesn't recurse into
 // the directory itself, if the dirPath doesn't exist this function doesn't return
 // an error.
+// 在指定目录下遍历每个条目并对其执行指定的函数。
 func readDirFn(dirPath string, fn func(name string, typ os.FileMode) error) error {
 	f, err := OpenFile(dirPath, readMode, 0o666)
 	if err != nil {
@@ -184,7 +202,7 @@ func readDirFn(dirPath string, fn func(name string, typ os.FileMode) error) erro
 		if boff >= nbuf {
 			boff = 0
 			stop := globalOSMetrics.time(osMetricReadDirent)
-			nbuf, err = syscall.ReadDirent(int(f.Fd()), buf)
+			nbuf, err = syscall.ReadDirent(int(f.Fd()), buf) // 读取目录条目信息到 buf 中
 			stop()
 			if err != nil {
 				if isSysErrNotDir(err) {
@@ -243,6 +261,7 @@ func readDirFn(dirPath string, fn func(name string, typ os.FileMode) error) erro
 
 // Return count entries at the directory dirPath and all entries
 // if count is set to -1
+// 读取指定目录下的所有条目名称，并可以选择读取的条目数量。
 func readDirWithOpts(dirPath string, opts readDirOpts) (entries []string, err error) {
 	f, err := OpenFile(dirPath, readMode, 0o666)
 	if err != nil {
@@ -252,6 +271,7 @@ func readDirWithOpts(dirPath string, opts readDirOpts) (entries []string, err er
 		// There may be permission error when dirPath
 		// is at the root of the disk mount that may
 		// not have the permissions to avoid 'noatime'
+		// 尝试通过只读操作来打开
 		f, err = Open(dirPath)
 		if err != nil {
 			return nil, osErrToFileErr(err)

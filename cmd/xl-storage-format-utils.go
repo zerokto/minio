@@ -143,11 +143,14 @@ func getFileInfo(xlMetaBuf []byte, volume, path, versionID string, data bool) (F
 
 // getXLDiskLoc will return the pool/set/disk id if it can be located in the object layer.
 // Will return -1 for unknown values.
+// 寻找存储桶在磁盘上的索引
 func getXLDiskLoc(diskID string) (poolIdx, setIdx, diskIdx int) {
 	if api := newObjectLayerFn(); api != nil {
+		// 是纠删码模式
 		if globalIsErasureSD {
 			return 0, 0, 0
 		}
+		// 不是
 		if ep, ok := api.(*erasureServerPools); ok {
 			if pool, set, disk, err := ep.getPoolAndSet(diskID); err == nil {
 				return pool, set, disk

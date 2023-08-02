@@ -20,6 +20,7 @@ package disk
 import "runtime"
 
 // IsRootDisk returns if diskPath belongs to root-disk, i.e the disk mounted at "/"
+// 用于判断指定的磁盘路径是否是根磁盘
 func IsRootDisk(diskPath string, rootDisk string) (bool, error) {
 	if runtime.GOOS == "windows" {
 		// On windows this function is not implemented.

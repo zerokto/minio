@@ -218,21 +218,25 @@ func (x xlFlags) String() string {
 
 // checkXL2V1 will check if the metadata has correct header and is a known major version.
 // The remaining payload and versions are returned.
+// checkXL2V1 函数会检查元数据是否具有正确的标头，并且属于已知的主版本。
+// 它会返回剩余的有效负载和版本信息。
 func checkXL2V1(buf []byte) (payload []byte, major, minor uint16, err error) {
+	// 前8位都是版本号和标头
 	if len(buf) <= 8 {
 		return payload, 0, 0, fmt.Errorf("xlMeta: no data")
 	}
-
+	// 检查是否具有正确的标头
 	if !bytes.Equal(buf[:4], xlHeader[:]) {
 		return payload, 0, 0, fmt.Errorf("xlMeta: unknown XLv2 header, expected %v, got %v", xlHeader[:4], buf[:4])
 	}
-
+	// 解析主版本和次版本号
 	if bytes.Equal(buf[4:8], []byte("1   ")) {
 		// Set as 1,0.
 		major, minor = 1, 0
 	} else {
 		major, minor = binary.LittleEndian.Uint16(buf[4:6]), binary.LittleEndian.Uint16(buf[6:8])
 	}
+	// 检查主版本号是否超出已知限制
 	if major > xlVersionMajor {
 		return buf[8:], major, minor, fmt.Errorf("xlMeta: unknown major version %d found", major)
 	}
@@ -686,6 +690,9 @@ func metaDataPoolPut(buf []byte) {
 // readXLMetaNoData will load the metadata, but skip data segments.
 // This should only be used when data is never interesting.
 // If data is not xlv2, it is returned in full.
+// readXLMetaNoData 会加载元数据，但跳过数据片段。
+// 这仅适用于数据不感兴趣的情况。
+// 如果数据不是 xlv2 格式，则会完整返回。
 func readXLMetaNoData(r io.Reader, size int64) ([]byte, error) {
 	initial := size
 	hasFull := true
@@ -693,27 +700,32 @@ func readXLMetaNoData(r io.Reader, size int64) ([]byte, error) {
 		initial = metaDataReadDefault
 		hasFull = false
 	}
-
+	// 准备缓冲区
 	buf := metaDataPoolGet()[:initial]
+	// 读取初始部分的数据
 	_, err := io.ReadFull(r, buf)
 	if err != nil {
 		return nil, fmt.Errorf("readXLMetaNoData(io.ReadFull): %w", err)
 	}
+	// 定义辅助函数 readMore，用于读取更多数据
 	readMore := func(n int64) error {
-		has := int64(len(buf))
+		has := int64(len(buf)) // 当前已经读取的数据长度
 		if has >= n {
 			return nil
 		}
 		if hasFull || n > size {
 			return io.ErrUnexpectedEOF
 		}
-		extra := n - has
+		extra := n - has // 仍然需要的字段长度
 		if int64(cap(buf)) >= n {
 			// Extend since we have enough space.
+			// buf 容量够了，大小扩大
 			buf = buf[:n]
 		} else {
+			// 容量不够，扩容先
 			buf = append(buf, make([]byte, extra)...)
 		}
+		// 读取数据到buf中
 		_, err := io.ReadFull(r, buf[has:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -724,6 +736,7 @@ func readXLMetaNoData(r io.Reader, size int64) ([]byte, error) {
 		}
 		return nil
 	}
+	// 检查元数据的版本
 	tmp, major, minor, err := checkXL2V1(buf)
 	if err != nil {
 		err = readMore(size)
@@ -733,16 +746,24 @@ func readXLMetaNoData(r io.Reader, size int64) ([]byte, error) {
 	case 1:
 		switch minor {
 		case 0:
+			// 对于 v1.0 版本，读取更多数据
 			err = readMore(size)
 			return buf, err
 		case 1, 2, 3:
+			// 对于 v1.1、v1.2 和 v1.3 版本，获取要读取的字节数
+			// 获取bin标头的大小，返回大小和剩余的字节数， bin标示后续的数据是以二进制格式编码的，并且需要特殊的解码处理
+			// 在 msgp 库中，'bin' 标头由一个类型字节和一个固定长度的无符号整数（通常是 4 字节）组成。
+			// 这个无符号整数表示了接下来的数据段的长度。
+			// 因此，在 ReadBytesHeader 函数中，它会读取 'bin' 标头的大小，并返回这个大小值和剩余的字节数据，方便后续的处理。
 			sz, tmp, err := msgp.ReadBytesHeader(tmp)
 			if err != nil {
 				return nil, fmt.Errorf("readXLMetaNoData(read_meta): uknown metadata version %w", err)
 			}
+			// 接下来读取的数据长度 + 还未读取的数据长度
 			want := int64(sz) + int64(len(buf)-len(tmp))
 
 			// v1.1 does not have CRC.
+			// v1.1 版本没有 CRC
 			if minor < 2 {
 				if err := readMore(want); err != nil {
 					return nil, err
@@ -751,7 +772,8 @@ func readXLMetaNoData(r io.Reader, size int64) ([]byte, error) {
 			}
 
 			// CRC is variable length, so we need to truncate exactly that.
-			wantMax := want + msgp.Uint32Size
+			// CRC 长度可变，所以我们需要精确截断
+			wantMax := want + msgp.Uint32Size // 加上 CRC 片段
 			if wantMax > size {
 				wantMax = size
 			}
@@ -762,12 +784,14 @@ func readXLMetaNoData(r io.Reader, size int64) ([]byte, error) {
 			if int64(len(buf)) < want {
 				return nil, fmt.Errorf("buffer shorter than expected (buflen: %d, want: %d): %w", len(buf), want, errFileCorrupt)
 			}
-
+			// 将 tmp 设置为剩余的字节片段（从索引 want 开始
 			tmp = buf[want:]
+			// 读取 tmp 中的一个 32 位无符号整数
 			_, after, err := msgp.ReadUint32Bytes(tmp)
 			if err != nil {
 				return nil, fmt.Errorf("readXLMetaNoData(read_meta): unknown metadata version %w", err)
 			}
+			// 根据 tmp 的长度和读取后剩余的字节数据 after 的长度计算出新的期望字节数 want
 			want += int64(len(tmp) - len(after))
 
 			return buf[:want], err

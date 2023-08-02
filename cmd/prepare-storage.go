@@ -70,6 +70,7 @@ var printEndpointError = func() func(Endpoint, error, bool) {
 }()
 
 // Cleans up tmp directory of the local disk.
+// 清理本地磁盘上的临时文件夹
 func bgFormatErasureCleanupTmp(diskPath string) {
 	// Need to move temporary objects left behind from previous run of minio
 	// server to a unique directory under `minioMetaTmpBucket-old` to clean
@@ -81,6 +82,7 @@ func bgFormatErasureCleanupTmp(diskPath string) {
 	//
 	// In this example, `33a58b40-aecc-4c9f-a22f-ff17bfa33b62` directory contains
 	// temporary objects from one of the previous runs of minio server.
+	// 删除缓存，先把缓存换个另一个地方，再删除另一个地方的缓存，避免影响当前运行的程序
 	tmpID := mustGetUUID()
 	tmpOld := pathJoin(diskPath, minioMetaTmpBucket+"-old", tmpID)
 	if err := renameAll(pathJoin(diskPath, minioMetaTmpBucket),
@@ -98,8 +100,10 @@ func bgFormatErasureCleanupTmp(diskPath string) {
 	}
 
 	// Remove the entire folder in case there are leftovers that didn't get cleaned up before restart.
+	// 函数异步地删除之前创建的 xxx.-old 目录
 	go removeAll(pathJoin(diskPath, minioMetaTmpBucket+"-old"))
 	// Renames and schedules for purging all bucket metacache.
+	// 异步地重命名所有存储桶的元数据缓存，并将其调度为后续的清理操作
 	go renameAllBucketMetacache(diskPath)
 }
 

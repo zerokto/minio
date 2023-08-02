@@ -89,36 +89,37 @@ func isValidVolname(volname string) bool {
 
 // xlStorage - implements StorageAPI interface.
 type xlStorage struct {
-	diskPath string
-	endpoint Endpoint
+	diskPath string   // 存储磁盘的路径
+	endpoint Endpoint // 存储磁盘的终端节点
 
-	globalSync bool
+	globalSync bool // 是否启用全局同步
 	oDirect    bool // indicates if this disk supports ODirect
-	rootDisk   bool
+	rootDisk   bool // 是否是根磁盘
 
-	diskID string
+	diskID string // 存储磁盘的唯一标识符
 
 	// Indexes, will be -1 until assigned a set.
-	poolIndex, setIndex, diskIndex int
+	poolIndex, setIndex, diskIndex int // 索引值，将在分配集合时被分配为非负整数
 
 	// Indicate of NSScanner is in progress in this disk
-	scanning int32
+	scanning int32 // 是否在此磁盘上进行 NSScanner 操作
 
-	formatFileInfo  os.FileInfo
-	formatLegacy    bool
-	formatLastCheck time.Time
+	formatFileInfo  os.FileInfo // 用于记录格式化信息。
+	formatLegacy    bool        // 指示是否启用传统格式
+	formatLastCheck time.Time   // 上次检查格式化信息的时间
 
-	diskInfoCache timedValue
+	diskInfoCache timedValue // 表示存储磁盘的信息缓存
 	sync.RWMutex
 
-	formatData []byte
+	formatData []byte // 字节数组，用于存储格式化信息
 
 	// mutex to prevent concurrent read operations overloading walks.
-	walkMu     sync.Mutex
+	walkMu     sync.Mutex // 用于防止并发读取操作过载行走
 	walkReadMu sync.Mutex
 }
 
 // checkPathLength - returns error if given path name length more than 255
+// 按照不同系统检查路径的长度是否符合要求
 func checkPathLength(pathName string) error {
 	// Apple OS X path length is limited to 1016
 	if runtime.GOOS == "darwin" && len(pathName) > 1016 {
@@ -188,6 +189,7 @@ func getValidPath(path string) (string, error) {
 }
 
 // isDirEmpty - returns whether given directory is empty or not.
+// 判断目录是否为空
 func isDirEmpty(dirname string) bool {
 	entries, err := readDirN(dirname, 1)
 	if err != nil {
@@ -200,23 +202,31 @@ func isDirEmpty(dirname string) bool {
 }
 
 // Initialize a new storage disk.
+// 初始化一个本地存储磁盘
 func newLocalXLStorage(path string) (*xlStorage, error) {
 	u := url.URL{Path: path}
 	return newXLStorage(Endpoint{
 		URL:     &u,
 		IsLocal: true,
-	}, true)
+	}, true) // 不存在是否新建一个桶（目录）
 }
 
 // Initialize a new storage disk.
+// 初始化一个存储桶
+// cleanUp 是否清理存储桶中的旧数据
 func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 	path := ep.Path
+	// 1. 获取有效的存储路径
 	if path, err = getValidPath(path); err != nil {
 		return nil, err
 	}
 
+	// 2. 判断是否是根磁盘
 	var rootDisk bool
+	// 如果不是CICD模式，也不是使用纠删编码的模式，就需要进行根磁盘检查
 	if !globalIsCICD && !globalIsErasureSD {
+		// globalRootDiskThreshold 磁盘大小的阈值
+		// 如果 磁盘大小 < 阈值 说明是根磁盘
 		if globalRootDiskThreshold > 0 {
 			// Use MINIO_ROOTDISK_THRESHOLD_SIZE to figure out if
 			// this disk is a root disk.
@@ -235,7 +245,7 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 			}
 		}
 	}
-
+	// 3. 创建一个xlStorage类型的变量s
 	s = &xlStorage{
 		diskPath:   path,
 		endpoint:   ep,
@@ -246,10 +256,12 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 		diskIndex:  -1,
 	}
 
+	// 4. 如果制定了清理选项，清理旧数据
 	if cleanUp {
 		bgFormatErasureCleanupTmp(s.diskPath) // cleanup any old data.
 	}
 
+	// 5. 用于迁移旧数据，同时获取存储桶的格式化信息和格式化文件信息，并将它们存储到 formatData 和 formatFileInfo 变量中。
 	formatData, formatFi, err := formatErasureMigrate(s.diskPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		if os.IsPermission(err) {
@@ -264,6 +276,7 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 
 	// Return an error if ODirect is not supported
 	// unless it is a single erasure disk mode
+	// 6. 检查当前磁盘是否支持 O_DIRECT
 	if err := s.checkODirectDiskSupport(); err == nil {
 		s.oDirect = true
 	} else {
@@ -274,18 +287,20 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 			return s, err
 		}
 	}
-
+	// 7. 没有格式化数据，创建存储桶目录
 	if len(s.formatData) == 0 {
 		// Create all necessary bucket folders if possible.
 		if err = makeFormatErasureMetaVolumes(s); err != nil {
 			return nil, err
 		}
 	} else {
+		// 有格式化数据，解析数据
 		format := &formatErasureV3{}
 		json := jsoniter.ConfigCompatibleWithStandardLibrary
 		if err = json.Unmarshal(s.formatData, &format); err != nil {
 			return s, errCorruptedFormat
 		}
+		// 存储解析结果
 		s.diskID = format.Erasure.This
 		s.formatLastCheck = time.Now()
 		s.formatLegacy = format.Erasure.DistributionAlgo == formatErasureVersionV2DistributionAlgoV1
@@ -296,9 +311,10 @@ func newXLStorage(ep Endpoint, cleanUp bool) (s *xlStorage, err error) {
 }
 
 // getDiskInfo returns given disk information.
+// 获取Disk磁盘相关信息
 func getDiskInfo(diskPath string) (di disk.Info, err error) {
 	if err = checkPathLength(diskPath); err == nil {
-		di, err = disk.GetInfo(diskPath)
+		di, err = disk.GetInfo(diskPath) // 获取目录/文件信息
 	}
 	switch {
 	case osIsNotExist(err):
@@ -342,6 +358,7 @@ func (s *xlStorage) IsLocal() bool {
 }
 
 // Retrieve location indexes.
+// 检索存储桶数据在磁盘上的位置索引（pool index、set index 和 disk index）。
 func (s *xlStorage) GetDiskLoc() (poolIdx, setIdx, diskIdx int) {
 	s.RLock()
 	defer s.RUnlock()
@@ -359,7 +376,9 @@ func (s *xlStorage) SetDiskLoc(poolIdx, setIdx, diskIdx int) {
 	s.diskIndex = diskIdx
 }
 
+// 读取保存在磁盘上的治理（healing）跟踪器数据
 func (s *xlStorage) Healing() *healingTracker {
+	// 获取治理跟踪器文件路径
 	healingFile := pathJoin(s.diskPath, minioMetaBucket,
 		bucketMetaPrefix, healingTrackerFilename)
 	b, err := os.ReadFile(healingFile)
@@ -375,20 +394,25 @@ func (s *xlStorage) Healing() *healingTracker {
 // checkODirectDiskSupport asks the disk to write some data
 // with O_DIRECT support, return an error if any and return
 // errUnsupportedDisk if there is no O_DIRECT support
+// 检查磁盘是否支持 O_DIRECT 特性
 func (s *xlStorage) checkODirectDiskSupport() error {
+	// 检查磁盘是否支持 O_DIRECT
 	if !disk.ODirectPlatform {
 		return errUnsupportedDisk
 	}
 
 	// Check if backend is writable and supports O_DIRECT
+	// 创建一个临时文件路径
 	uuid := mustGetUUID()
 	filePath := pathJoin(s.diskPath, ".writable-check-"+uuid+".tmp")
+	// 移动到垃圾文件中
 	defer renameAll(filePath, pathJoin(s.diskPath, minioMetaTmpDeletedBucket, uuid))
-
+	// 打开文件
 	w, err := s.openFileDirect(filePath, os.O_CREATE|os.O_WRONLY|os.O_EXCL)
 	if err != nil {
 		return err
 	}
+	// 写入预定义的数据
 	_, err = w.Write(alignedBuf)
 	w.Close()
 	if err != nil {
@@ -400,7 +424,9 @@ func (s *xlStorage) checkODirectDiskSupport() error {
 }
 
 // readsMetadata and returns disk mTime information for xl.meta
+// 用于读取文件的元数据和磁盘修改时间（mTime）信息。
 func (s *xlStorage) readMetadataWithDMTime(ctx context.Context, itemPath string) ([]byte, time.Time, error) {
+	// 判断当前ctx是否已经cancel
 	if contextCanceled(ctx) {
 		return nil, time.Time{}, ctx.Err()
 	}
@@ -408,23 +434,24 @@ func (s *xlStorage) readMetadataWithDMTime(ctx context.Context, itemPath string)
 	if err := checkPathLength(itemPath); err != nil {
 		return nil, time.Time{}, err
 	}
-
+	// 打开文件
 	f, err := OpenFile(itemPath, readMode, 0o666)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
 	defer f.Close()
-	stat, err := f.Stat()
+	stat, err := f.Stat() // 文件状态信息
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	if stat.IsDir() {
+	if stat.IsDir() { // 是目录
 		return nil, time.Time{}, &os.PathError{
 			Op:   "open",
 			Path: itemPath,
 			Err:  syscall.EISDIR,
 		}
 	}
+	// 读取xl.meta的元数据，不包括数据部分
 	buf, err := readXLMetaNoData(f, stat.Size())
 	if err != nil {
 		return nil, stat.ModTime().UTC(), fmt.Errorf("%w -> %s", err, itemPath)
@@ -451,10 +478,13 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 	}()
 
 	// Updates must be closed before we return.
+	// 在函数返回之前，要确保 updates 通道被关闭。updates 是用于发送数据使用情况更新的通道。
 	defer close(updates)
 	var lc *lifecycle.Lifecycle
 
 	// Check if the current bucket has a configured lifecycle policy
+	// 如果全局的生命周期系统 globalLifecycleSys 不为 nil，
+	// 就检查当前存储桶是否配置了生命周期策略，并将其记录到缓存的 Info.lifeCycle 字段中。
 	if globalLifecycleSys != nil {
 		lc, err = globalLifecycleSys.Get(cache.Info.Name)
 		if err == nil && lc.HasActiveRules("") {
@@ -463,8 +493,12 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 	}
 
 	// Check if the current bucket has replication configuration
+	// 如果全局的存储桶元数据系统 globalBucketMetadataSys 中存在存储桶的复制配置，
+	// 则检查该存储桶是否配置了复制规则，并将复制配置和目标列表记录到缓存的 Info.replication 字段中。
 	if rcfg, _, err := globalBucketMetadataSys.GetReplicationConfig(ctx, cache.Info.Name); err == nil {
+		// 存在活动规则
 		if rcfg.HasActiveRules("", true) {
+			// 存储桶的目标列表
 			tgts, err := globalBucketTargetSys.ListBucketTargets(ctx, cache.Info.Name)
 			if err == nil {
 				cache.Info.replication = replicationConfig{
@@ -475,9 +509,11 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 		}
 	}
 
+	// 获取存储桶的版本配置，并将其记录到 vcfg 变量中。
 	vcfg, _ := globalBucketVersioningSys.Get(cache.Info.Name)
 
 	// return initialized object layer
+	// 函数初始化对象层接口
 	objAPI := newObjectLayerFn()
 	// object layer not initialized, return.
 	if objAPI == nil {
@@ -485,11 +521,12 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 	}
 
 	cache.Info.updates = updates
-
+	// 获取磁盘位置的池索引和设置索引
 	poolIdx, setIdx, _ := s.GetDiskLoc()
 
 	dataUsageInfo, err := scanDataFolder(ctx, poolIdx, setIdx, s.diskPath, cache, func(item scannerItem) (sizeSummary, error) {
 		// Look for `xl.meta/xl.json' at the leaf.
+		// 是否以 "xl.meta/xl.json" 结尾，如果不是，则跳过该文件的处理。
 		if !strings.HasSuffix(item.Path, SlashSeparator+xlStorageFormatFile) &&
 			!strings.HasSuffix(item.Path, SlashSeparator+xlStorageFormatFileV1) {
 			// if no xl.meta/xl.json found, skip the file.
@@ -501,7 +538,9 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 			stopFn(res)
 		}()
 
+		// 统计读取元数据的耗时
 		doneSz := globalScannerMetrics.timeSize(scannerMetricReadMetadata)
+		// 读取元数据并得到一个字节缓存 buf
 		buf, err := s.readMetadata(ctx, item.Path)
 		doneSz(len(buf))
 		res["metasize"] = fmt.Sprint(len(buf))
@@ -513,7 +552,7 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 
 		// Remove filename which is the meta file.
 		item.transformMetaDir()
-
+		// 根据元数据和扫描项的信息获取文件信息的所有版本。
 		fivs, err := getFileInfoVersions(buf, item.bucket, item.objectPath())
 		if err != nil {
 			res["err"] = err.Error()
@@ -521,7 +560,7 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 		}
 
 		sizeS := sizeSummary{}
-		var noTiers bool
+		var noTiers bool // 是否有分层配置
 		if noTiers = globalTierConfigMgr.Empty(); !noTiers {
 			sizeS.tiers = make(map[string]tierStats)
 		}
@@ -535,7 +574,7 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 			return sizeSummary{}, errSkipFile
 		}
 
-		versioned := vcfg != nil && vcfg.Versioned(item.objectPath())
+		versioned := vcfg != nil && vcfg.Versioned(item.objectPath()) // 是否启动版本控制
 
 		for _, oi := range objInfos {
 			done = globalScannerMetrics.time(scannerMetricApplyVersion)
@@ -562,12 +601,14 @@ func (s *xlStorage) NSScanner(ctx context.Context, cache dataUsageCache, updates
 		}
 
 		// apply tier sweep action on free versions
+		// 自由版本
 		if len(fivs.FreeVersions) > 0 {
 			res["free-versions"] = fmt.Sprint(len(fivs.FreeVersions))
 		}
 		for _, freeVersion := range fivs.FreeVersions {
 			oi := freeVersion.ToObjectInfo(item.bucket, item.objectPath(), versioned)
 			done = globalScannerMetrics.time(scannerMetricTierObjSweep)
+			// 分层对象清理操作
 			item.applyTierObjSweep(ctx, objAPI, oi)
 			done()
 		}

@@ -2083,10 +2083,14 @@ func (z *erasureServerPools) HealObject(ctx context.Context, bucket, object, ver
 	}
 }
 
+// 获取存储桶数据在磁盘上的位置索引（pool index、set index 和 disk index）
 func (z *erasureServerPools) getPoolAndSet(id string) (poolIdx, setIdx, diskIdx int, err error) {
+	// 遍历所有的 server pool，
 	for poolIdx := range z.serverPools {
 		format := z.serverPools[poolIdx].format
+		// 遍历 format 的所有 erasure set
 		for setIdx, set := range format.Erasure.Sets {
+			// 遍历每个 erasure set 中的所有磁盘
 			for i, diskID := range set {
 				if diskID == id {
 					return poolIdx, setIdx, i, nil

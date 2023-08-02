@@ -32,6 +32,7 @@ import (
 const ODirectPlatform = true
 
 // OpenFileDirectIO - bypass kernel cache.
+// directIO 更好的性能
 func OpenFileDirectIO(filePath string, flag int, perm os.FileMode) (*os.File, error) {
 	return directio.OpenFile(filePath, flag, perm)
 }
@@ -49,6 +50,7 @@ func DisableDirectIO(f *os.File) error {
 }
 
 // AlignedBlock - pass through to directio implementation.
+// 返回一个对齐的字节数组
 func AlignedBlock(blockSize int) []byte {
 	return directio.AlignedBlock(blockSize)
 }

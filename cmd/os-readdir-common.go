@@ -20,16 +20,19 @@ package cmd
 // Options for readDir function call
 type readDirOpts struct {
 	// The maximum number of entries to return
-	count int
+	count int // 要返回的最大条目数。
 	// Follow directory symlink
-	followDirSymlink bool
+	followDirSymlink bool // 指示是否应该跟随目录符号链接。
 }
+
+// 重构了 os.ReadDir方法，添加自定
 
 // Return all the entries at the directory dirPath.
 func readDir(dirPath string) (entries []string, err error) {
 	return readDirWithOpts(dirPath, readDirOpts{count: -1})
 }
 
+// 它只返回最多 count 个条目的名称
 // Return up to count entries at the directory dirPath.
 func readDirN(dirPath string, count int) (entries []string, err error) {
 	return readDirWithOpts(dirPath, readDirOpts{count: count})
